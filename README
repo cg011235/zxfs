@@ -6,7 +6,7 @@ Well, intention for adding another file system is not to create
 next 'great' file system or to solve any perticular problem or
 to save the world etc.
 
-This project is intended to be a handsi-on guide/aide for people
+This project is intended to be a hands-on guide/aide for people
 who want to learn Linux file system witout burden of lifting heavy
 books and ninja style code.So, aim is to be simple, informative
 and complete (should cover all aspects of FS development).
