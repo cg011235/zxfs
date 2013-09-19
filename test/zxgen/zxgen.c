@@ -18,34 +18,47 @@
 #include <string.h>
 #include <errno.h>
 
+#define TRUE    1
+#define FULL    1
+#define EMPTY   2
+#define LEN     31
+
+/* Load policies */
+#define LP_FIL_H    0
+#define LP_DIR_V    1
+#define LP_DIR_H    2
+#define LP_DIR_F    3
+#define LP_MIX_H    4
+#define LP_MIX_V    5
+#define LP_MIX_F    6
+
 struct iqe {
     char *path;
-    int flag;
     struct iqe *next;
 };
 
 struct iq {
     int count;
+    int policy;
     struct iqe *head;
     struct iqe *rear;
+    pthread_cond_t wakeup_prod;
     pthread_mutex_t mlock;
-} q = {0, NULL, NULL, PTHREAD_MUTEX_INITIALIZER};
+} q = {0, -1, NULL, NULL, PTHREAD_COND_INITIALIZER, PTHREAD_MUTEX_INITIALIZER};
+
 
 void
-enq(char *path, int flag)
+enq(char *path)
 {
     struct iqe *e = NULL;
-    int len = strlen(path);
 
     e = (struct iqe *) malloc(sizeof(struct iqe));
     if (e) {
-        e->path = (char *) malloc(len + 1);
-        strncpy(e->path, path, len);
-        e->path[len] = '\0';
-        e->flag = flag;
+        e->path = (char *) malloc(LEN);
+        strncpy(e->path, path, LEN - 1);
+        e->path[LEN] = '\0';
         e->next = NULL;
         
-        pthread_mutex_lock(&q.mlock);
         if (q.head == NULL) {
             q.head = q.rear = e;
         } else {
@@ -53,7 +66,6 @@ enq(char *path, int flag)
             q.rear = e;
         }
         q.count = q.count + 1;
-        pthread_mutex_unlock(&q.mlock);
     }
 
     return;
@@ -64,7 +76,6 @@ deq(void)
 {
     struct iqe *t;
 
-    pthread_mutex_lock(&q.mlock);
     if (q.head != NULL) {
         t = q.head;
         if (t->next == NULL) {
@@ -74,7 +85,6 @@ deq(void)
         }
     }
     q.count = q.count - 1;
-    pthread_mutex_unlock(&q.mlock);
     free(t);
 
     return;
@@ -85,19 +95,35 @@ deq(void)
 void *
 producer(void *arg)
 {
-    char name[7];
+    char name[LEN];
+    int i, fd;
+    int maxi = *((int *) arg);
     
-    srand(time(NULL));
-    name[0] = 't';
-    name[1] = (char) (65 + (rand() % 9)); 
-    name[2] = (char) (97 + (rand() % 2)); 
-    name[3] = (char) (65 + (rand() % 3)); 
-    name[4] = (char) (97 + (rand() % 4)); 
-    name[5] = (char) (48 + (rand() % 5)); 
-    name[6] = '\0';
-    mkdir(name, 0755);
-    enq(name, 1);
-    sleep(5);
+    while (TRUE) {
+        srand(time(NULL));
+        for (i = 0; i < (LEN - 1); i++) {
+            if (i % 3 == 0) {
+                name[i] = (char) (65 + (rand() % 10) + (i % 10)); 
+            } else {
+                name[i] = (char) (97 + (rand() % 10) + (i % 10)); 
+            }
+        }
+        name[LEN - 1] = '\0';
+        pthread_mutex_lock(&q.mlock);
+        if (q.count < maxi) {
+            if (q.policy == LP_FIL_H) {
+                if ((fd = creat(name, 0775)) == -1) {
+                    fprintf(stderr, "zxgen: %s, %s", name, strerror(errno));
+                    continue;
+                }
+                close(fd);
+            }
+            enq(name);
+        } else {
+            pthread_cond_wait(&q.wakeup_prod, &q.mlock);
+        }
+        pthread_mutex_unlock(&q.mlock);
+    }
 
     pthread_exit(NULL);
 }
@@ -135,7 +161,7 @@ main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    pthread_create(&prod, NULL, producer, NULL);
+    pthread_create(&prod, NULL, producer, (void *) &max_inode);
 
     pthread_exit(NULL);
 }
