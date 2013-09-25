@@ -259,16 +259,17 @@ fileio(void *arg)
 int
 main(int argc, char *argv[])
 {
-    int opt;
+    int opt, fd;
     char *mount_point = NULL;
     struct carg carg = {63, 2};
     struct fioarg f = {9, 512, IOP_NO_VERIFY};
     int dsleep = 3;
+    char *log_file = NULL;
     pthread_t ptc1, ptc2, ptc3;
     pthread_t ptd1, ptd2;
     pthread_t ptf;
 
-    while ((opt = getopt(argc, argv, "m:i:c:d:")) != -1) {
+    while ((opt = getopt(argc, argv, "m:i:c:d:b:k:p:l:")) != -1) {
         switch (opt) {
             case 'm':
                 mount_point = (char *) optarg;
@@ -290,6 +291,17 @@ main(int argc, char *argv[])
                 break;
             case 'p':
                 f.iopolicy = atoi(optarg);
+                break;
+            case 'l':
+                log_file = (char *) optarg;
+                if ((fd = open(log_file, (O_WRONLY | O_CREAT))) == -1) {
+                    fprintf(stderr, "Error: zxgen: %s: %s\n", log_file, strerror(errno));
+                    break;
+                }
+                dup2(STDOUT_FILENO, STDERR_FILENO);
+                close(STDOUT_FILENO);
+                dup(fd);
+                close(fd);
                 break;
             case '?':
             default:
@@ -313,7 +325,6 @@ main(int argc, char *argv[])
         fprintf(stderr, "Error: zxgen: %s: %s\n", mount_point, strerror(errno));
         exit(EXIT_FAILURE);
     }
-
     zxlog("Working directory changed to %s\n", mount_point);
 
     pthread_create(&ptc1, NULL, creator, (void *) &carg);
